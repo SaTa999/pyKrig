@@ -58,5 +58,5 @@ docs/_build/
 target/
 
 # Sandbox
-src/sandbox
-src/utilities/build
+pyKrige/sandbox
+pyKrige/utilities/build
