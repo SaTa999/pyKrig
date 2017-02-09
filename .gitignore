@@ -58,5 +58,6 @@ docs/_build/
 target/
 
 # Sandbox
-pyKrige/sandbox
+pyKrige/sandbox/.ipynb_checkpoints
+pyKrige/sandbox/__pycache__
 pyKrige/utilities/build

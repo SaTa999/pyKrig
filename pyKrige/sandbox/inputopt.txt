@@ -1,0 +1,16 @@
+10        ! .. population size par sub-population
+1         ! .. sub-population number or division number
+0         ! .. begining generation number(0=from initial pop.)
+30      ! .. total geration number from begining
+16         ! .. migration or re-division interval
+20     ! .. i number of randum number call
+8         ! .. itest: test function number (7:EI maximization, 8:opt on krig)
+1         ! .. nfit: number of objective functions
+7        ! .. ndv: number of design variables
+72. 192.     ! .. span pos; min - max
+-8. 8.     ! .. fin angle; min - max
+-20. 40.     ! .. chord pos; min - max
+40. 80.     ! .. root chord; min - max
+0. 1.     ! .. taper; min - max
+20. 70.     ! .. span height; min - max
+-30. 30.     ! .. sweep; min - max
