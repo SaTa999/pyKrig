@@ -18,15 +18,47 @@ def wpdist(double[:, ::1] X, double[:] b):
     cdef double tmp, d
     cdef double[:, ::1] D = np.empty((M, M), dtype=np.float64)
     for i in range(M):
+        D[i, i] = 1.0
         for j in range(i+1, M):
             d = 0.0
             for k in range(N):
                 tmp = X[i, k] - X[j, k]
                 d -= tmp * tmp * b[k]
             D[i, j] = exp(d)
-        D[i, i] = 1.0
     return np.asarray(D)
 
+
+def wpdist2(double[:, ::1] X, double[:, ::1] D, double[:] b):
+    cdef int M = X.shape[0]
+    cdef int N = X.shape[1]
+    cdef int i, j, k
+    cdef double tmp, d
+    cdef double[:] sa = np.zeros((M), dtype=np.float64)
+    for i in range(M):
+        for k in range(N):
+            tmp = X[i, k] * X[i, k]
+            sa[i] -= b[i] * tmp
+    for i in range(M):
+        D[i, i] = 1.0
+        for j in range(i+1, M):
+            D[i, j] = exp(sa[i] + sa[j] - 2 * D[i, j])
+
+
+def wpdist3(double[:, ::1] X):
+    cdef int M = X.shape[0]
+    cdef int N = X.shape[1]
+    cdef int i, j, k
+    cdef int incX = 1, incY =1
+    cdef double tmp, d
+    cdef double[:] sa = np.empty((M), dtype=np.float64)
+    cdef double[:, ::1] D = np.empty((M, M), dtype=np.float64)
+    for i in range(M):
+        sa[i] = - bl.ddot(&N, &X[i, 0], &incX, &X[i, 0], &incY)
+    for i in range(M):
+        D[i, i] = 1.0
+        for j in range(i+1, M):
+            D[i, j] = exp(sa[i] + sa[j] + 2 * bl.ddot(&N, &X[i, 0], &incX, &X[j, 0], &incY))
+    return np.asarray(D)
 
 def wpdist5(double[:, ::1] X, double[:] b, double[:, ::1] D):
     cdef int M = X.shape[0]

@@ -58,8 +58,7 @@ docs/_build/
 target/
 
 # Sandbox
-pyKrige/sandbox/.ipynb_checkpoints
-pyKrige/sandbox/__pycache__
+sandbox/
 pyKrige/utilities/build
 
 # PyCharm stuff
