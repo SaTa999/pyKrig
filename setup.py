@@ -62,27 +62,6 @@ else:
     _cmdclass = {}
 
 
-def batch_rename(src):
-    '''
-    Same as os.rename, but returns the renaming result.
-    '''
-    print(src)
-    dst = re.sub(r'\.cp([^.]+).+\.pyd$', ".pyd", src)
-    os.rename(src, dst)
-    return dst
-
-class _CommandInstallCythonized(install_lib):
-
-    def install(self):
-        # let the distutils' install_lib do the hard work
-        outfiles = install_lib.install(self)
-        # batch rename the outfiles:
-        # for each file, match string between
-        # second last and last dot and trim it
-        return  [batch_rename(file) for file in outfiles]
-
-_cmdclass["install_lib"] = _CommandInstallCythonized
-
 if __name__ == "__main__":
     install_requires = check_dependencies()
 
