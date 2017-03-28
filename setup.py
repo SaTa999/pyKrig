@@ -1,5 +1,6 @@
 #! /usr/bin/env python
-from distutils.extension import Extension
+import os
+import re
 from Cython.Distutils import build_ext
 import numpy
 
@@ -12,10 +13,11 @@ DOWNLOAD_URL = 'https://github.com/SaTa999/pyKrig'
 VERSION = '0.1.0'
 
 try:
-    from setuptools import setup
-    _has_setuptools = True
+    from setuptools import setup, Extension
+    from setuptools.command.install_lib import install_lib
 except ImportError:
-    from distutils.core import setup
+    from distutils.core import setup, Extension
+    from distutils.command.install_lib import install_lib
 
 
 def check_dependencies():
@@ -47,18 +49,39 @@ except ImportError:
 
 
 if USE_CYTHON:
-    ext_modules = [
-    Extension("pyKrig.utilities.krig", sources=["pyKrig.utilities.krig.pyx"], extra_compile_args=['/O2']),
-    Extension("pyKrig.utilities.lhs", sources=["pyKrig.utilities.lhs.pyx"], extra_compile_args=['/O2'])
+    _ext_modules = [
+    Extension("pyKrig.utilities.krig", sources=["pyKrig/utilities/krig.pyx"], extra_compile_args=['/O2']),
+    Extension("pyKrig.utilities.lhs", sources=["pyKrig/utilities/lhs.pyx"], extra_compile_args=['/O2'])
     ]
-    cmdclass = {'build_ext': build_ext}
+    _cmdclass = {'build_ext': build_ext}
 else:
-    ext_modules = [
-    Extension("pyKrig.utilities.krig", sources=["pyKrig.utilities.krig.c"], extra_compile_args=['/O2']),
-    Extension("pyKrig.utilities.lhs", sources=["pyKrig.utilities.lhs.c"], extra_compile_args=['/O2'])
+    _ext_modules = [
+    Extension("pyKrig.utilities.krig", sources=["pyKrig/utilities/krig.c"], extra_compile_args=['/O2']),
+    Extension("pyKrig.utilities.lhs", sources=["pyKrig/utilities/lhs.c"], extra_compile_args=['/O2'])
     ]
-    cmdclass = {}
+    _cmdclass = {}
 
+
+def batch_rename(src):
+    '''
+    Same as os.rename, but returns the renaming result.
+    '''
+    dst = re.sub(r'\.cp([^.]+).+\.pyd$', ".pyd", src)
+    os.rename(src, dst)
+    return dst
+
+class _CommandInstallCythonized(install_lib):
+
+    def install(self):
+        # let the distutils' install_lib do the hard work
+        outfiles = install_lib.install(self)
+        # batch rename the outfiles:
+        # for each file, match string between
+        # second last and last dot and trim it
+        tmp = [batch_rename(file) for file in outfiles]
+        return tmp
+
+_cmdclass["install_lib"] = _CommandInstallCythonized
 
 if __name__ == "__main__":
     install_requires = check_dependencies()
@@ -71,15 +94,14 @@ if __name__ == "__main__":
           version=VERSION,
           download_url=DOWNLOAD_URL,
           install_requires=install_requires,
-          packages=['pyKrig'],
-          package_dir={'pyKrig.utilities'},
+          packages=['pyKrig', 'pyKrig.utilities'],
           classifiers=[
               'Intended Audience :: Science/Research',
               'Programming Language :: Python :: 3.6',
               'License :: OSI Approved :: MIT License',
               'Topic :: Scientific/Engineering',
               'Operating System :: Microsoft :: Windows'],
-          cmdclass = cmdclass,
-          ext_modules = ext_modules,
+          cmdclass = _cmdclass,
+          ext_modules = _ext_modules,
           include_dirs=[numpy.get_include()]
           )
