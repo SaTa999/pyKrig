@@ -71,7 +71,8 @@ if __name__ == "__main__":
           version=VERSION,
           download_url=DOWNLOAD_URL,
           install_requires=install_requires,
-          packages=['pyKrig', 'pyKrig.utilities'],
+          packages=['pyKrig'],
+          package_dir={'pyKrig.utilities'},
           classifiers=[
               'Intended Audience :: Science/Research',
               'Programming Language :: Python :: 3.6',
