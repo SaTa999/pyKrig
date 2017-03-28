@@ -1,4 +1,9 @@
 #! /usr/bin/env python
+from distutils.extension import Extension
+from Cython.Distutils import build_ext
+import numpy
+
+
 DESCRIPTION = 'pyKrig: Kriging & ANOVA implemted in python'
 DISTNAME = 'pyKrig'
 MAINTAINER = 'STakanashi'
@@ -34,6 +39,27 @@ def check_dependencies():
     return install_requires
 
 
+try:
+    from Cython.Distutils import build_ext
+    USE_CYTHON = True
+except ImportError:
+    USE_CYTHON = False
+
+
+if USE_CYTHON:
+    ext_modules = [
+    Extension("pyKrig.utilities.krig", sources=["pyKrig.utilities.krig.pyx"], extra_compile_args=['/O2']),
+    Extension("pyKrig.utilities.lhs", sources=["pyKrig.utilities.lhs.pyx"], extra_compile_args=['/O2'])
+    ]
+    cmdclass = {'build_ext': build_ext}
+else:
+    ext_modules = [
+    Extension("pyKrig.utilities.krig", sources=["pyKrig.utilities.krig.c"], extra_compile_args=['/O2']),
+    Extension("pyKrig.utilities.lhs", sources=["pyKrig.utilities.lhs.c"], extra_compile_args=['/O2'])
+    ]
+    cmdclass = {}
+
+
 if __name__ == "__main__":
     install_requires = check_dependencies()
 
@@ -52,4 +78,7 @@ if __name__ == "__main__":
               'License :: OSI Approved :: MIT License',
               'Topic :: Scientific/Engineering',
               'Operating System :: Microsoft :: Windows'],
+          cmdclass = cmdclass,
+          ext_modules = ext_modules,
+          include_dirs=[numpy.get_include()]
           )
