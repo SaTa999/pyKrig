@@ -1,6 +1,7 @@
 #! /usr/bin/env python
 import os
 import re
+import sysconfig
 from Cython.Distutils import build_ext
 import numpy
 
@@ -62,26 +63,27 @@ else:
     _cmdclass = {}
 
 
-def batch_rename(src):
-    '''
-    Same as os.rename, but returns the renaming result.
-    '''
-    dst = re.sub(r'\.cp([^.]+).+\.pyd$', ".pyd", src)
-    os.rename(src, dst)
-    return dst
+class BuildExtWithoutPlatformSuffix(build_ext):
+    def get_ext_filename(self, ext_name):
+        filename = super().get_ext_filename(ext_name)
+        return get_ext_filename_without_platform_suffix(filename)
 
-class _CommandInstallCythonized(install_lib):
+def get_ext_filename_without_platform_suffix(filename):
+    name, ext = os.path.splitext(filename)
+    ext_suffix = sysconfig.get_config_var('EXT_SUFFIX')
 
-    def install(self):
-        # let the distutils' install_lib do the hard work
-        outfiles = install_lib.install(self)
-        # batch rename the outfiles:
-        # for each file, match string between
-        # second last and last dot and trim it
-        tmp = [batch_rename(file) for file in outfiles]
-        return tmp
+    if ext_suffix == ext:
+        return filename
 
-_cmdclass["install_lib"] = _CommandInstallCythonized
+    ext_suffix = ext_suffix.replace(ext, '')
+    idx = name.find(ext_suffix)
+
+    if idx == -1:
+        return filename
+    else:
+        return name[:idx] + ext
+
+_cmdclass["build_ext"] = BuildExtWithoutPlatformSuffix
 
 if __name__ == "__main__":
     install_requires = check_dependencies()
