@@ -79,9 +79,8 @@ class _CommandInstallCythonized(install_lib):
         # batch rename the outfiles:
         # for each file, match string between
         # second last and last dot and trim it
-        tmp =  [batch_rename(file) for file in outfiles]
-        input()
-        return tmp
+        return  [batch_rename(file) for file in outfiles]
+
 _cmdclass["install_lib"] = _CommandInstallCythonized
 
 if __name__ == "__main__":
