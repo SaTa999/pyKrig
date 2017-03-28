@@ -2,7 +2,7 @@
 from math import ceil, sqrt
 import numpy as np
 from functools import partial
-from
+from pyKrig.utilities import pairwise_distance,
 
 
 def latin_hypercube(nsample, ndv):

@@ -1,2 +1,2 @@
-from .utilities import *
+from .krig import *
 from .lhs import *
