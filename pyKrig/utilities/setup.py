@@ -7,8 +7,11 @@ import numpy
 setup(
     cmdclass={'build_ext': build_ext},
     ext_modules=[
-    Extension("utilities",
-              sources=["utilities.pyx"],
+    Extension("krig",
+              sources=["krig.pyx"],
+              extra_compile_args=['/O2']),
+    Extension("lhs",
+              sources=["lhs.pyx"],
               extra_compile_args=['/O2'])
     ],
     include_dirs = [numpy.get_include()]

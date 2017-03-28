@@ -1,2 +1,2 @@
-__author__ = 'satoshitakanashi'
 from .utilities import *
+from .lhs import *

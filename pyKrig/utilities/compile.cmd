@@ -1,3 +1,5 @@
 python setup.py build_ext --inplace
-rm utilities.pyd
-rename utilities.cp36-win_amd64.pyd utilities.pyd
+rm krig.pyd
+rename krig.cp36-win_amd64.pyd krig.pyd
+rm lhs.pyd
+rename lhs.cp36-win_amd64.pyd lhs.pyd
