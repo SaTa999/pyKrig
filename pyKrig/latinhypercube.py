@@ -22,25 +22,30 @@ def latin_hypercube(nsample, ndv):
     return lhs
 
 
-def perturbate(design):
+def perturbate(X):
     """
     randomly choose a pair of sampling points, and interchange the values of a randomly chosen design variable
     """
-    ns, ndv = design.shape
+    ns, ndv = X.shape
     is1 = np.random.randint(ns)
     is2 = np.random.randint(ns)
     idv = np.random.randint(ndv)
-    design[is1, idv], design[is2, idv] = design[is2, idv], design[is1, idv]
+    X[is1, idv], X[is2, idv] = X[is2, idv], X[is1, idv]
 
 
 def optimize_lhs(X, criterion_func):
+    """
+    optimize a latin hypercube via simulated annealing
+    :param X: a latin hypercube
+    :param criterion_func: the function used to evaluate the latin hypercube
+    """
     # initialize
     phi = criterion_func(X)
     phi_best = phi
     Xbest = np.array(X, copy=True)
     Xtry = np.empty_like(X)
 
-    # calculate initial temprature by sampling the average change of criterion
+    # calculate initial temperature by sampling the average change of criterion
     n_test = 30
     avg_delta_phi = 0
     cnt = 0
@@ -52,8 +57,11 @@ def optimize_lhs(X, criterion_func):
         if delta_phi > 0:
             cnt += 1
             avg_delta_phi += delta_phi
-    avg_delta_phi /= n_test
-    temp_init = - avg_delta_phi / np.log(0.99)
+    if cnt == 0:
+        temp_init = 1.
+    else:
+        avg_delta_phi /= cnt
+        temp_init = - avg_delta_phi / np.log(0.99)
     temp_fin = temp_init * 1e-6
     cool_rate = 0.95
     max_perturbation = ceil(sqrt(X.shape[1]))
@@ -77,9 +85,16 @@ def optimize_lhs(X, criterion_func):
                 X[:] = Xtry
                 phi = phi_try
         temp *= cool_rate
+    X[:] = Xbest
 
 
 def optimal_latin_hypercube(nsample, ndv, metric="euclidean"):
+    """
+    create an optimal lhs using Morris & Mitchel's method (1995)
+    :param nsample: number of sample points
+    :param ndv: number of design variables
+    :param metric: metric used to calculate the MM criterion; use "manhattan" or "euclidean"
+    """
     X = latin_hypercube(nsample, ndv)
     Xbest = np.array(X, copy=True)
     distbest = pairwise_distance(Xbest, metric)
