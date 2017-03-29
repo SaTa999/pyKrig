@@ -50,6 +50,7 @@ class Krig(object):
             self.reg = hyperparams[0]
             self.theta = hyperparams[1:]
         else:
+            self.reg = 0.
             self.theta = hyperparams
         if dvminmax is None:
             try:
@@ -109,7 +110,7 @@ class Krig(object):
     def _rmatrix(self):
         """i,j要素がCorr[xi,xj]となる行列"""
         if Krig._UTILS:
-            return utilities.wpdist(self.normx, self.theta)
+            return utilities.pdist(self.normx, self.theta, self.reg)
         else:
             return np.exp(np.einsum("ijk,k", self.pairwise, -self.theta, order="C"))
 
