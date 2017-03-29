@@ -1,1 +1,1 @@
-pass
+from .latinhypercube import *

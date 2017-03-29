@@ -9,59 +9,31 @@ cimport cython
 from libc.math cimport exp
 
 
-def wpdist(double[:, ::1] X, double[:] b):
+def pdist(double[:, ::1] X, double[:] b, double reg=0.):
+    """
+    calculate the pairwise distance between each sample point
+    """
     cdef int M = X.shape[0]
     cdef int N = X.shape[1]
     cdef int i, j
     cdef double tmp, d
+    cdef double regp1 = reg + 1.
     cdef double[:, ::1] D = np.empty((M, M), dtype=np.float64)
     for i in range(M):
-        D[i, i] = 1.0
+        D[i, i] = regp1
         for j in range(i+1, M):
-            d = 0.0
+            d = 0.
             for k in range(N):
                 tmp = X[i, k] - X[j, k]
                 d -= tmp * tmp * b[k]
             D[i, j] = exp(d)
-    return np.asarray(D)
-
-
-def wpdist5(double[:, ::1] X, double[:] b, double[:, ::1] D):
-    cdef int M = X.shape[0]
-    cdef int N = X.shape[1]
-    cdef int i, j
-    cdef double tmp, d
-    for i in range(M):
-        for j in range(i+1, M):
-            d = 0.0
-            for k in range(N):
-                tmp = X[i, k] - X[j, k]
-                d -= tmp * tmp * b[k]
-            D[i, j] = exp(d)
-        D[i, i] = 1.0
-    return np.asarray(D)
-
-
-def wpdist_reg(double[:, ::1] X, double[:] b, double lamb):
-    cdef Py_ssize_t M = X.shape[0]
-    cdef Py_ssize_t N = X.shape[1]
-    cdef int i, j
-    cdef double lp1 = lamb + 1.
-    cdef double tmp, d
-    cdef double[:, ::1] D = np.empty((M, M), dtype=np.float64)
-    for i in range(M):
-        for j in range(i+1, M):
-            d = 0.0
-            for k in range(N):
-                tmp = X[i, k] - X[j, k]
-                d -= tmp * tmp * b[k]
-            D[i, j] = exp(d)
-            D[j, i] = D[i, j]
-        D[i, i] = lp1
     return np.asarray(D)
 
 
 def chol_fact(double[:,::1] A, char UPLO='L'):
+    """
+    cholesky decomposition A = L * L^t 
+    """
     cdef double[::1, :] AT = A.T
     cdef int N = A.shape[0]
     cdef int info
@@ -121,6 +93,7 @@ def gll_reg(double[:] nf_ir, double[:, ::1] normx, double[:,::1]rm, double[:, ::
             for k in range(N):
                 tmp = normx[i, k] - normx[j, k]
                 grad[k+1] -= tmp * tmp * rmarm
+        rmarm = rm[i,i] * (nf_ir[i] * nf_ir[i] * invsig - ir[i, i])
         grad[0] += rmarm
     grad[0] *= 0.5
     return np.asarray(grad)
