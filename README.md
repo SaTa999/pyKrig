@@ -1,7 +1,29 @@
 # pyKrig
 Kriging & functional analysis of variance (ANOVA) with python
 
-##Citation
+## Installation
+(pyKrig requires a C compiler. 
+For a Windows + Python3.5/3.6 environment,
+[Visual C++ 2015 Build Tools](http://landinghub.visualstudio.com/visual-cpp-build-tools) is recommended.)
+
+Download the repository and type
+
+```commandline
+pip install .
+```
+
+or if you have git installed, simply type
+
+```commandline
+pip install git+https://github.com/SaTa999/pyPanair
+```
+
+## Requirements
+pyPanair requires python 3.5+  
+(tests have only been performed for python 3.6)  
+An [Anaconda3](https://www.continuum.io/) environment is recommended.
+
+## References
 Check the following books / papers to learn more about what is implemented in pyKrig
 - Jones, D.R., Schonlau, M. and Welch, W.J., "Efficient Global Optimization of Expensive Black-Box Function,"
  *Journal of Global Optimization*, Vol. 13, 1998, pp. 455-492.
