@@ -6,50 +6,61 @@ import matplotlib.pyplot as plt
 from scipy.linalg import cho_factor, cho_solve
 from scipy.special import erf
 import seaborn as sns
-
-try:
-    from pyKrig import utilities
-    _ENABLE_UTILS = True
-except ImportError as e:
-    print(e)
-    print("compile pyKrig.utilities for faster evaluation")
-    _ENABLE_UTILS = False
+from pyKrig import utilities
 
 
 class Krig(object):
     """Kriging法により応答局面を求めるクラス"""
-    _UTILS = _ENABLE_UTILS
 
-    def __init__(self, table=None, btheta=None, EI=False, ANOVA=False):
-        # table, input, bthetaを読み込む
+    def __init__(self, table=None, hyperparams=None, dvminmax=None, regression=False, EI=False, ANOVA=False):
+        """
+        :param table: 設計変数と目的関数の2d-array、Noneの場合はtable.csvを読み込む
+        :param hyperparams: ハイパーパラメタの1d-array、Noneの場合はhyperparam.csvを読み込む
+                            hyperparams.csvがない場合はすべて1として初期化する
+                            regression=Trueの場合、1つ目のhyper parameterがregression項になる
+        :param dvminmax: 設計変数の最小値・最大値の2d-array、Noneの場合はdvminmax.csvを読み込む
+        :param EI: Trueの場合、EI値計算用の事前計算を行う
+        :param ANOVA: Trueの場合、ANOVA用の事前計算を行う
+        """
         if table is None:
-            self.table = np.loadtxt("table.csv", skiprows=1, delimiter=",")
+            table = np.loadtxt("table.csv", skiprows=1, delimiter=",")
         else:
-            self.table = table
-        inputopt = np.loadtxt("inputopt.txt", delimiter="\n", dtype=bytes)
-        self.nobj = int(inputopt[7].split()[0])  # 目的関数の数（現在は1しか対応していません）
-        self.ndv = int(inputopt[8].split()[0])  # 設計変数の数
-        if btheta is None:
+            table = np.asarray(table)
+        self.nobj = 1  # 目的関数の数（現在は1しか対応していません）
+        self.ndv = int(table.shape[1] - self.nobj)  # 設計変数の数
+        x = table[:, :self.ndv]  # tableの設計変数の値をまとめた行列
+        self.f = table[:, self.ndv]  # tableの目的関数の値をまとめた行列
+        if hyperparams is None:
             try:
-                self.btheta = np.loadtxt("thetamax.csv", delimiter=",")
-            except IOError:
-                print("btheta.csv not found")
-                self.btheta = 5. * np.ones(self.ndv)
+                hyperparams = np.loadtxt("hyperparams.csv", delimiter=",")
+            except FileNotFoundError:
+                print("hyperparams.csv not found")
+                hyperparams = 5. * np.ones(self.ndv)
         else:
-            self.btheta = btheta
-        self.dv_minmax = np.array([list(map(float, l.split()[:2])) for l in inputopt[9:9 + self.ndv]])  # 設計変数の最大・最小
-        x = self.table[:, 1:1 + self.ndv]  # tableの変数の値をまとめた行列
+            hyperparams = np.asarray(hyperparams)
+        if regression:
+            self.reg = hyperparams[0]
+            self.theta = hyperparams[1:]
+            self.gll = utilities.gll_reg
+        else:
+            self.reg = 0.
+            self.theta = hyperparams
+            self.gll = utilities.gll
+        if dvminmax is None:
+            try:
+                dvminmax = np.loadtxt("dvminmax.csv", delimiter=",", skiprows=1)
+                self.dvmin = dvminmax[0]
+                self.dvmax = dvminmax[1]
+            except FileNotFoundError:
+                print("dvminmax.csv not found")
+                self.dvmin = x.min(axis=0)
+                self.dvmax = x.max(axis=0)
+        else:
+            dvminmax = np.asarray(dvminmax)
+            self.dvmin = dvminmax[0]
+            self.dvmax = dvminmax[1]
         self.normx = self.normalizex(x)  # tableの変数の値を正規化
-        self.f = self.table[:, self.ndv + 1]  # tableの目的関数の値をまとめた行列
         self.m = self.f.shape[0]  # サンプル点数
-        # utilitiesを使用するか否か
-        if Krig._UTILS:
-            self.cloglikelihood = self._cloglikelihood2
-            self.grad_cll = self._grad_cll2
-        else:
-            self.cloglikelihood = self._cloglikelihood
-            self.grad_cll = self._grad_cll
-            self.pairwise = np.square(self.normx[:, np.newaxis, :] - self.normx[np.newaxis, :, :])
         self.rmat = self.rmatrix()
         self.crmat = self.chol_rmatrix()
         self.mu = self.mu_()
@@ -76,18 +87,18 @@ class Krig(object):
 
     def normalizex(self, x):
         """xを正規化する"""
-        return (x - self.dv_minmax[:, 0]) / (self.dv_minmax[:, 1] - self.dv_minmax[:, 0])
+        return (x - self.dvmin) / (self.dvmax - self.dvmin)
 
     def denormalizex(self, x):
         """正規化されたxをもとに戻す"""
-        return x * (self.dv_minmax[:, 1] - self.dv_minmax[:, 0]) + self.dv_minmax[:, 0]
+        return x * (self.dvmax - self.dvmin) + self.dvmin
 
     def rmatrix(self):
         """i,j要素がCorr[xi,xj]となる行列"""
         if Krig._UTILS:
-            return utilities.wpdist(self.normx, self.btheta)
+            return utilities.pdist(self.normx, self.theta, self.reg)
         else:
-            return np.exp(np.einsum("ijk,k", self.pairwise, -self.btheta, order="C"))
+            return np.exp(np.einsum("ijk,k", self.pairwise, -self.theta, order="C"))
 
     def chol_rmatrix(self):
         """相関行列をコレスキー分解した行列"""
@@ -109,7 +120,7 @@ class Krig(object):
         return mu
 
     def mu_2(self, crm):
-        """任意のbthetaに対してのμ"""
+        """任意のhyperparamsに対してのμ"""
         unit_v = np.ones(self.m)
         rhs = np.vstack((self.f, unit_v)).T
         tmp = cho_solve(crm, rhs, check_finite=False)
@@ -136,22 +147,22 @@ class Krig(object):
         sigma /= self.m
         return sigma
 
-    def _cloglikelihood(self, btheta):
-        """KrigingモデルのCompressed Loglikelihood（Jones[2001]）を計算(numpy+scipyを使用)
-        L = -n / 2 * ln(σ ^ 2) - 1 / 2 * ln(det(R))"""
-        rm = np.exp(np.einsum("ijk,k", self.pairwise, -btheta), order="C")
-        crm = cho_factor(rm, check_finite=False)
-        mu = self.mu_2(crm)
-        normf = self.f - mu
-        sigma = np.inner(normf, cho_solve(crm, normf, check_finite=False))
-        sigma /= self.m
-        ldrm = np.sum(np.log(np.diag(crm[0])))
-        cllh = - 0.5 * (self.m * np.log(sigma)) - ldrm
-        return cllh
+    # def _cloglikelihood(self, hyperparams):
+    #     """KrigingモデルのCompressed Loglikelihood（Jones[2001]）を計算(numpy+scipyを使用)
+    #     L = -n / 2 * ln(σ ^ 2) - 1 / 2 * ln(det(R))"""
+    #     rm = np.exp(np.einsum("ijk,k", self.pairwise, -hyperparams), order="C")
+    #     crm = cho_factor(rm, check_finite=False)
+    #     mu = self.mu_2(crm)
+    #     normf = self.f - mu
+    #     sigma = np.inner(normf, cho_solve(crm, normf, check_finite=False))
+    #     sigma /= self.m
+    #     ldrm = np.sum(np.log(np.diag(crm[0])))
+    #     cllh = - 0.5 * (self.m * np.log(sigma)) - ldrm
+    #     return cllh
 
-    def _cloglikelihood2(self, btheta):
+    def cloglikelihood(self, theta, reg=0.):
         """KrigingモデルのCompressed Loglikelihood（Jones[2001]）を計算(numpy+scipy+cython+LAPACKを使用)"""
-        crm = utilities.wpdist(self.normx, btheta)
+        crm = utilities.pdist(self.normx, theta, reg)
         utilities.chol_fact(crm)
         # mu
         uv = np.ones(crm.shape[0])
@@ -169,25 +180,25 @@ class Krig(object):
         cllh = - 0.5 * (self.m * np.log(sigma)) - ldrm
         return cllh
 
-    def _grad_cll(self, btheta):
-        """Compressed Loglikelihoodの勾配をReverse algorithmic differentationを用いて計算(Toal 2009)
-        (numpy+scipyを使用)"""
-        rm = np.exp(np.einsum("ijk,k", self.pairwise, -btheta, order="C"))
-        crm = cho_factor(rm, check_finite=False)
-        ir = cho_solve(crm, np.eye(self.m), check_finite=False)
-        mu = self.mu_2(crm)
-        normf = self.f - mu
-        tmp = np.dot(normf, ir)
-        sigma = np.inner(tmp, normf)
-        sigma /= self.m
-        arm = (tmp[:, np.newaxis] * tmp) / (2 * sigma) - 0.5 * ir
-        gll = - np.einsum("ijk, ij, ij", self.pairwise, rm, arm)
-        return gll
+    # def _grad_cll(self, hyperparams):
+    #     """Compressed Loglikelihoodの勾配をReverse algorithmic differentiationを用いて計算(Toal 2009)
+    #     (numpy+scipyを使用)"""
+    #     rm = np.exp(np.einsum("ijk,k", self.pairwise, -hyperparams, order="C"))
+    #     crm = cho_factor(rm, check_finite=False)
+    #     ir = cho_solve(crm, np.eye(self.m), check_finite=False)
+    #     mu = self.mu_2(crm)
+    #     normf = self.f - mu
+    #     tmp = np.dot(normf, ir)
+    #     sigma = np.inner(tmp, normf)
+    #     sigma /= self.m
+    #     arm = (tmp[:, np.newaxis] * tmp) / (2 * sigma) - 0.5 * ir
+    #     gll = - np.einsum("ijk, ij, ij", self.pairwise, rm, arm)
+    #     return gll
 
-    def _grad_cll2(self, btheta):
-        """Compressed Loglikelihoodの勾配をReverse algorithmic differentationを用いて計算(Toal 2009)
+    def grad_cll(self, theta, reg=0.):
+        """Compressed Loglikelihoodの勾配をReverse algorithmic differentiationを用いて計算(Toal 2009)
         (numpy+scipy+cython+LAPACKを使用)"""
-        rm = utilities.wpdist(self.normx, btheta)
+        rm = utilities.pdist(self.normx, theta, reg)
         crm = np.array(rm, copy=True)
         utilities.chol_fact(crm)
         # mu
@@ -203,13 +214,13 @@ class Krig(object):
         tmp = utilities.symdot(ir, normf)
         sigma = np.inner(tmp, normf)
         sigma /= self.m
-        gll = utilities.gll(tmp, self.normx, rm, ir, sigma)
+        gll = self.gll(tmp, self.normx, rm, ir, sigma)
         return gll
 
     def corr_vec(self, xi):
         """i番目の要素がCorr[e(x),e(xi)]となるm次元ベクトル
         xi: 正規化した座標"""
-        return np.exp(np.einsum("ij, j", (self.normx - xi) ** 2, -self.btheta))
+        return np.exp(np.einsum("ij, j", (self.normx - xi) ** 2, -self.theta))
 
     def predict(self, x):
         """Kriging法によって求めた応答局面上の点xにおける値"""
@@ -261,8 +272,8 @@ class Krig(object):
         return 0.5 * np.sqrt(np.pi) / sa * (erf(sa * b) - erf(sa * (b - 1.)))
 
     def f_array(self):
-        """i,j番目の要素がint_gauss(btheta, xi_j)となる(m, n_dv)次元配列"""
-        return self.int_gauss(self.btheta, self.normx)
+        """i,j番目の要素がint_gauss(hyperparams, xi_j)となる(m, n_dv)次元配列"""
+        return self.int_gauss(self.theta, self.normx)
 
     def prod_f_array(self):
         """i番目の要素がΠ_j(_ij)となるベクトル"""
@@ -275,8 +286,8 @@ class Krig(object):
         erf(sa * (b + c)) - erf(sa * (b + c - 2.)))
 
     def g_array(self):
-        """i,j,k番目の要素がint_square_gauss(btheta, xi_j, xi_k)]となる(m, m, n_dv)次元配列"""
-        return self.int_square_gauss(self.btheta, self.normx, self.normx[:, np.newaxis, :])
+        """i,j,k番目の要素がint_square_gauss(hyperparams, xi_j, xi_k)]となる(m, m, n_dv)次元配列"""
+        return self.int_square_gauss(self.theta, self.normx, self.normx[:, np.newaxis, :])
 
     def prod_g_array(self):
         """i,j番目の要素がΠ_k(G_ijk)となる配列"""
@@ -346,7 +357,7 @@ class Krig(object):
         mu = self.mu - self.pmu
         c = self.irnf
         d = self.pfarray / self.farray[:, dvj]
-        tj = self.btheta[dvj]
+        tj = self.theta[dvj]
         xj = self.normx[:, dvj]
 
         def _mefunc(x):
@@ -361,8 +372,8 @@ class Krig(object):
         mu = self.mu - self.pmu
         c = self.irnf
         d = self.pfarray / (self.farray[:, dvj] * self.farray[:, dvk])
-        tj = self.btheta[dvj]
-        tk = self.btheta[dvk]
+        tj = self.theta[dvj]
+        tk = self.theta[dvk]
         xj = self.normx[:, dvj]
         xk = self.normx[:, dvk]
 
@@ -384,7 +395,7 @@ def main():
     sns.set_style("whitegrid", rc={"legend.frameon": True})
     sns.set_palette("Set1", n_colors=9, desat=0.8)
 
-    krige = Krig(EI=False, ANOVA=True)
+    krige = Krig(regression=False, EI=False, ANOVA=True)
 
     # 分散の割合の円グラフ
     print("calc_vars")

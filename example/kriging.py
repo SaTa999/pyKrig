@@ -6,19 +6,11 @@ import matplotlib.pyplot as plt
 from scipy.linalg import cho_factor, cho_solve
 from scipy.special import erf
 import seaborn as sns
-
-try:
-    from pyKrig import utilities
-    _ENABLE_UTILS = True
-except ImportError as e:
-    print(e)
-    print("compile pyKrig.utilities for faster evaluation")
-    _ENABLE_UTILS = False
+from pyKrig import utilities
 
 
 class Krig(object):
     """Kriging法により応答局面を求めるクラス"""
-    _UTILS = _ENABLE_UTILS
 
     def __init__(self, table=None, hyperparams=None, dvminmax=None, regression=False, EI=False, ANOVA=False):
         """
@@ -40,7 +32,7 @@ class Krig(object):
         self.f = table[:, self.ndv]  # tableの目的関数の値をまとめた行列
         if hyperparams is None:
             try:
-                hyperparams = np.loadtxt("thetamax.csv", delimiter=",")
+                hyperparams = np.loadtxt("hyperparams.csv", delimiter=",")
             except FileNotFoundError:
                 print("hyperparams.csv not found")
                 hyperparams = 5. * np.ones(self.ndv)
@@ -49,9 +41,11 @@ class Krig(object):
         if regression:
             self.reg = hyperparams[0]
             self.theta = hyperparams[1:]
+            self.gll = utilities.gll_reg
         else:
             self.reg = 0.
             self.theta = hyperparams
+            self.gll = utilities.gll
         if dvminmax is None:
             try:
                 dvminmax = np.loadtxt("dvminmax.csv", delimiter=",", skiprows=1)
@@ -67,14 +61,6 @@ class Krig(object):
             self.dvmax = dvminmax[1]
         self.normx = self.normalizex(x)  # tableの変数の値を正規化
         self.m = self.f.shape[0]  # サンプル点数
-        # utilitiesを使用するか否か
-        if Krig._UTILS:
-            self.cloglikelihood = self._cloglikelihood2
-            self.grad_cll = self._grad_cll2
-        else:
-            self.cloglikelihood = self._cloglikelihood
-            self.grad_cll = self._grad_cll
-            self.pairwise = np.square(self.normx[:, np.newaxis, :] - self.normx[np.newaxis, :, :])
         self.rmat = self.rmatrix()
         self.crmat = self.chol_rmatrix()
         self.mu = self.mu_()
@@ -107,7 +93,7 @@ class Krig(object):
         """正規化されたxをもとに戻す"""
         return x * (self.dvmax - self.dvmin) + self.dvmin
 
-    def _rmatrix(self):
+    def rmatrix(self):
         """i,j要素がCorr[xi,xj]となる行列"""
         if Krig._UTILS:
             return utilities.pdist(self.normx, self.theta, self.reg)
@@ -161,22 +147,22 @@ class Krig(object):
         sigma /= self.m
         return sigma
 
-    def _cloglikelihood(self, hyperparams):
-        """KrigingモデルのCompressed Loglikelihood（Jones[2001]）を計算(numpy+scipyを使用)
-        L = -n / 2 * ln(σ ^ 2) - 1 / 2 * ln(det(R))"""
-        rm = np.exp(np.einsum("ijk,k", self.pairwise, -hyperparams), order="C")
-        crm = cho_factor(rm, check_finite=False)
-        mu = self.mu_2(crm)
-        normf = self.f - mu
-        sigma = np.inner(normf, cho_solve(crm, normf, check_finite=False))
-        sigma /= self.m
-        ldrm = np.sum(np.log(np.diag(crm[0])))
-        cllh = - 0.5 * (self.m * np.log(sigma)) - ldrm
-        return cllh
+    # def _cloglikelihood(self, hyperparams):
+    #     """KrigingモデルのCompressed Loglikelihood（Jones[2001]）を計算(numpy+scipyを使用)
+    #     L = -n / 2 * ln(σ ^ 2) - 1 / 2 * ln(det(R))"""
+    #     rm = np.exp(np.einsum("ijk,k", self.pairwise, -hyperparams), order="C")
+    #     crm = cho_factor(rm, check_finite=False)
+    #     mu = self.mu_2(crm)
+    #     normf = self.f - mu
+    #     sigma = np.inner(normf, cho_solve(crm, normf, check_finite=False))
+    #     sigma /= self.m
+    #     ldrm = np.sum(np.log(np.diag(crm[0])))
+    #     cllh = - 0.5 * (self.m * np.log(sigma)) - ldrm
+    #     return cllh
 
-    def _cloglikelihood2(self, hyperparams):
+    def cloglikelihood(self, theta, reg=0.):
         """KrigingモデルのCompressed Loglikelihood（Jones[2001]）を計算(numpy+scipy+cython+LAPACKを使用)"""
-        crm = utilities.wpdist(self.normx, hyperparams)
+        crm = utilities.pdist(self.normx, theta, reg)
         utilities.chol_fact(crm)
         # mu
         uv = np.ones(crm.shape[0])
@@ -194,25 +180,25 @@ class Krig(object):
         cllh = - 0.5 * (self.m * np.log(sigma)) - ldrm
         return cllh
 
-    def _grad_cll(self, hyperparams):
-        """Compressed Loglikelihoodの勾配をReverse algorithmic differentationを用いて計算(Toal 2009)
-        (numpy+scipyを使用)"""
-        rm = np.exp(np.einsum("ijk,k", self.pairwise, -hyperparams, order="C"))
-        crm = cho_factor(rm, check_finite=False)
-        ir = cho_solve(crm, np.eye(self.m), check_finite=False)
-        mu = self.mu_2(crm)
-        normf = self.f - mu
-        tmp = np.dot(normf, ir)
-        sigma = np.inner(tmp, normf)
-        sigma /= self.m
-        arm = (tmp[:, np.newaxis] * tmp) / (2 * sigma) - 0.5 * ir
-        gll = - np.einsum("ijk, ij, ij", self.pairwise, rm, arm)
-        return gll
+    # def _grad_cll(self, hyperparams):
+    #     """Compressed Loglikelihoodの勾配をReverse algorithmic differentiationを用いて計算(Toal 2009)
+    #     (numpy+scipyを使用)"""
+    #     rm = np.exp(np.einsum("ijk,k", self.pairwise, -hyperparams, order="C"))
+    #     crm = cho_factor(rm, check_finite=False)
+    #     ir = cho_solve(crm, np.eye(self.m), check_finite=False)
+    #     mu = self.mu_2(crm)
+    #     normf = self.f - mu
+    #     tmp = np.dot(normf, ir)
+    #     sigma = np.inner(tmp, normf)
+    #     sigma /= self.m
+    #     arm = (tmp[:, np.newaxis] * tmp) / (2 * sigma) - 0.5 * ir
+    #     gll = - np.einsum("ijk, ij, ij", self.pairwise, rm, arm)
+    #     return gll
 
-    def _grad_cll2(self, hyperparams):
-        """Compressed Loglikelihoodの勾配をReverse algorithmic differentationを用いて計算(Toal 2009)
+    def grad_cll(self, theta, reg=0.):
+        """Compressed Loglikelihoodの勾配をReverse algorithmic differentiationを用いて計算(Toal 2009)
         (numpy+scipy+cython+LAPACKを使用)"""
-        rm = utilities.wpdist(self.normx, hyperparams)
+        rm = utilities.pdist(self.normx, theta, reg)
         crm = np.array(rm, copy=True)
         utilities.chol_fact(crm)
         # mu
@@ -228,7 +214,7 @@ class Krig(object):
         tmp = utilities.symdot(ir, normf)
         sigma = np.inner(tmp, normf)
         sigma /= self.m
-        gll = utilities.gll(tmp, self.normx, rm, ir, sigma)
+        gll = self.gll(tmp, self.normx, rm, ir, sigma)
         return gll
 
     def corr_vec(self, xi):
@@ -409,7 +395,7 @@ def main():
     sns.set_style("whitegrid", rc={"legend.frameon": True})
     sns.set_palette("Set1", n_colors=9, desat=0.8)
 
-    krige = Krig(EI=False, ANOVA=True)
+    krige = Krig(regression=False, EI=False, ANOVA=True)
 
     # 分散の割合の円グラフ
     print("calc_vars")
